@@ -1,7 +1,6 @@
 package com.bignerdranch.android.flickrphotogallery;
 
 
-import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
@@ -11,13 +10,17 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.Fragment;
 import android.support.v7.widget.GridLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.ListView;
+import android.widget.SearchView;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -68,6 +71,35 @@ public class PhotoGalleryFragment extends Fragment {
     }
 
     @Override
+    public void onCreateOptionsMenu(final Menu menu, final MenuInflater inflater) {
+
+        inflater.inflate(R.menu.menu_photo_gallery, menu);
+
+        MenuItem menuItem = menu.findItem(R.id.menu_item_search);
+        SearchView searchView = (SearchView) menuItem.getActionView();
+
+        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            @Override
+            public boolean onQueryTextSubmit(final String query) {
+                Log.d(TAG, "onQueryTextSubmit: query submitted: " + query);
+
+
+                mAdapter.clearItems();
+                mModelView.fetchNextPageOfSearchPhotos(query);
+
+                return true;
+            }
+
+            @Override
+            public boolean onQueryTextChange(final String newText) {
+                return false;
+            }
+        });
+
+
+    }
+
+    @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (getArguments() != null) {
@@ -78,6 +110,8 @@ public class PhotoGalleryFragment extends Fragment {
 
         //not needed given use of ViewModel
 //        setRetainInstance(true);
+
+        setHasOptionsMenu(true);
 
         mModelView = new PhotoGalleryViewModel();
 
@@ -149,17 +183,7 @@ public class PhotoGalleryFragment extends Fragment {
         mPhotoRecyclerView.setLayoutManager(new GridLayoutManager(getActivity(), 3));
         mPhotoRecyclerView.setAdapter(mAdapter);
         mPhotoRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            /**
-             * Callback method to be invoked when RecyclerView's scroll state changes.
-             *
-             * @param recyclerView The RecyclerView whose scroll state has changed.
-             * @param newState     The updated scroll state. One of link #SCROLL_STATE_IDLE},
-             *                     {ink #SCROLL_STATE_DRAGGING} or {link #SCROLL_STATE_SETTLING}.
-             */
-            @Override
-            public void onScrollStateChanged(final RecyclerView recyclerView, final int newState) {
-                super.onScrollStateChanged(recyclerView, newState);
-            }
+
 
             /**
              * Callback method to be invoked when the RecyclerView has been scrolled. This will be
@@ -176,11 +200,24 @@ public class PhotoGalleryFragment extends Fragment {
             public void onScrolled(final RecyclerView recyclerView, final int dx, final int dy) {
 
                 if (!recyclerView.canScrollVertically(1)) {
-                    mModelView.fetchNextPageOfGalleryItems();
+                    if (mModelView.getCurrentMethod() == PhotoGalleryViewModel.FlickrMethod.RECENTS) {
+
+                        mModelView.fetchNextPageOfRecentPhotos();
+
+                    } else {
+                        // since we are fetching next page of results for
+                        // most recent search--then we pass null here to
+                        // indicate to modelView to use its currentQuery field
+                        mModelView.fetchNextPageOfSearchPhotos(null);
+
+                    }
                 }
 
             }
         });
+
+
+        mPhotoRecyclerView.getLayoutManager().setItemPrefetchEnabled(true);
 
     }
 
@@ -204,7 +241,8 @@ public class PhotoGalleryFragment extends Fragment {
     }
 
     private class PhotoAdapter extends RecyclerView.Adapter<PhotoHolder> {
-        List<GalleryItemEntity> mItems = new ArrayList<>();
+        private List<GalleryItemEntity> mItems;
+        private boolean mClearOnNextSubmit = false;
 
         /**
          * Called when RecyclerView needs a new {link ViewHolder} of the given type to represent
@@ -258,9 +296,6 @@ public class PhotoGalleryFragment extends Fragment {
         @Override
         public void onBindViewHolder(@NonNull final PhotoHolder holder, final int position) {
 
-//            Drawable mockImage = getResources().getDrawable(R.drawable.ic_android_black_24dp);
-//
-//            holder.bind(mockImage);
 
             mThumbnailDownloader.queueThumbnail(holder, mItems.get(position).getUrl());
 
@@ -278,22 +313,32 @@ public class PhotoGalleryFragment extends Fragment {
 
         void submitItems(List<GalleryItemEntity> items) {
 
-            if (mItems.size() > 0) {
+            if (mItems == null || mClearOnNextSubmit) {
+
+                mClearOnNextSubmit = false;
+
+                mItems = items;
+
+//                notifyItemRangeInserted(0, items.size());
+                notifyDataSetChanged();
+
+            } else {
+
                 appendItems(items);
-            }else {
 
-                mItems.addAll(items);
-
-                notifyItemRangeInserted(0, items.size());
 
             }
         }
 
-        void appendItems(List<GalleryItemEntity> newItems) {
+        private void appendItems(List<GalleryItemEntity> newItems) {
             int oldSize = mItems.size();
             mItems.addAll(newItems);
             notifyItemRangeInserted(oldSize, newItems.size());
 
+        }
+
+        public void clearItems() {
+            mClearOnNextSubmit = true;
         }
     }
 
