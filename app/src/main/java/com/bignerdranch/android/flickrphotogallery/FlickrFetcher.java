@@ -3,12 +3,19 @@ package com.bignerdranch.android.flickrphotogallery;
 import android.net.Uri;
 import android.util.Log;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.annotations.Expose;
+import com.google.gson.annotations.SerializedName;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class FlickrFetcher {
@@ -25,6 +32,11 @@ public class FlickrFetcher {
 
 
     private static final String API_METHOD_GETRECENT = "flickr.photos.getRecent";
+
+    private static final String API_METHOD_SEARCH = "flickr.photos.search";
+
+    private static final String[] API_METHOD_SEARCHARG = {"search","interestingness-desc"};
+
 
     //TODO apparently getPopular is for a particular USER -- so use getRecent
     private static final String API_METHOD_GETPOPULAR = "flickr.photos.getPopular";
@@ -55,10 +67,7 @@ public class FlickrFetcher {
         }
     };
 
-//    static {
-//        API_METHOD_ARG_WHATPAGE.set(new String[]{"page", "1"});
-//
-//    }
+
 
 
     private static final int MAX_PAGES = 3;
@@ -66,81 +75,191 @@ public class FlickrFetcher {
 
     private static final int ARG_INDEX = 0;
     private static final int VAL_INDEX = 1;
+    private static final Uri URL_ENDPOINT = Uri.parse(API_ENDPOINT)
+            .buildUpon()
+            .appendQueryParameter("api_key", API_KEY)
+            .appendQueryParameter("format", API_FORMAT)
+            .appendQueryParameter(API_JSONP_FORMAT[ARG_INDEX], API_JSONP_FORMAT[VAL_INDEX])
+            .appendQueryParameter("extras", "url_s")
+            .build();
 
 
-    public List<GalleryItemEntity> fetchItems() {
+    public FlickrFetcher(int whatpage) {
+        setPageIndex(whatpage);
+
+    }
+
+    private String buildURL(String method, String query) {
+        Uri.Builder builder = URL_ENDPOINT
+                .buildUpon()
+                .appendQueryParameter("method", method);
+
+        if (method.equals(API_METHOD_SEARCH)) {
+            builder.appendQueryParameter("text", query)
+                    .appendQueryParameter(API_METHOD_SEARCHARG[ARG_INDEX],API_METHOD_SEARCHARG[VAL_INDEX]);
+        }
+
+        return builder.build().toString();
+    }
+
+
+    public List<GalleryItemEntity> fetchRecentPhotos() {
+        String url = buildURL(API_METHOD_GETRECENT, null);
+
+        return downloadGalleryItems(url);
+    }
+
+    public List<GalleryItemEntity> fetchSearchPhotos(String query) {
+        String url = buildURL(API_METHOD_SEARCH, query);
+
+        return downloadGalleryItems(url);
+    }
+
+    private List<GalleryItemEntity> downloadGalleryItems(String url) {
+
         List<GalleryItemEntity> items = new ArrayList<>();
 
         if (Integer.parseInt(API_METHOD_ARG_WHATPAGE.get()[VAL_INDEX]) > MAX_PAGES) {
             return items;
         }
 
-        try {
-            String url = Uri.parse(API_ENDPOINT)
-                    .buildUpon()
-                    .appendQueryParameter("method", API_METHOD_GETRECENT)
-                    .appendQueryParameter("api_key", API_KEY)
-                    .appendQueryParameter("format", API_FORMAT)
-                    .appendQueryParameter(API_JSONP_FORMAT[ARG_INDEX],API_JSONP_FORMAT[VAL_INDEX])
-                    .appendQueryParameter(API_METHOD_ARG_PERPAGE[ARG_INDEX],API_METHOD_ARG_PERPAGE[VAL_INDEX])
-                    .appendQueryParameter("extras", "url_s")
-                    .appendQueryParameter(API_METHOD_ARG_WHATPAGE.get()[ARG_INDEX],API_METHOD_ARG_WHATPAGE.get()[VAL_INDEX])
-                    .build().toString();
 
-            Log.d(TAG, "fetchItems: URL: " + url);
+        try {
+
+            url = addPageArgs(url);
+
+
+            Log.d(TAG, "downloadGalleryItems: URL: " + url);
 
             String jsonString = URLfetcher.getURLString(url);
 
-            Log.d(TAG, "fetchItems: received json: " + jsonString);
+            Log.d(TAG, "downloadGalleryItems: received json: " + jsonString);
 
             JSONObject jsonBody = new JSONObject(jsonString);
 
 
-            parseItems(items, jsonBody);
+            parseItems(items, jsonString);
 
 
         } catch (IOException e) {
-            Log.e(TAG, "fetchItems: failed  to getURLString", e);
+            Log.e(TAG, "downloadGalleryItems: failed  to getURLString", e);
 
         } catch (JSONException e) {
-            Log.e(TAG, "fetchItems: failed to parse JSONObect", e);
+            Log.e(TAG, "downloadGalleryItems: failed to parse JSONObect", e);
 
 
         }
 
-        incrementPageIndex();
+
         return items;
     }
 
-    private void incrementPageIndex() {
-        int nextPage = Integer.parseInt(API_METHOD_ARG_WHATPAGE.get()[VAL_INDEX]) + 1;
-        API_METHOD_ARG_WHATPAGE.get()[VAL_INDEX] = String.valueOf(nextPage);
-        Log.d(TAG, "incrementPageIndex: incremented page index to: " + nextPage);
+    private String addPageArgs(String url) {
+        return  Uri.parse(url)
+                .buildUpon()
+                .appendQueryParameter(API_METHOD_ARG_PERPAGE[ARG_INDEX], API_METHOD_ARG_PERPAGE[VAL_INDEX])
+                .appendQueryParameter(API_METHOD_ARG_WHATPAGE.get()[ARG_INDEX], API_METHOD_ARG_WHATPAGE.get()[VAL_INDEX])
+                .build().toString();
+
+    }
+
+    private void setPageIndex(int whatpage) {
+        API_METHOD_ARG_WHATPAGE.get()[VAL_INDEX] = String.valueOf(whatpage);
+        Log.d(TAG, "setPageIndex: incremented page index to: " + whatpage);
     }
 
 
-    private void parseItems(List<GalleryItemEntity> items, JSONObject body) throws JSONException {
-        JSONObject photosObject = body.getJSONObject("photos");
 
-        JSONArray photoArray = photosObject.getJSONArray("photo");
+    //POJOs to deserialize JSON via GSON
+    private static class PhotosObject {
 
-        for (int i = 0; i < photoArray.length(); i++) {
-            JSONObject photo = (JSONObject) photoArray.get(i);
 
-            GalleryItemEntity item = new GalleryItemEntity();
+        @Expose
+        PhotosResult photos;
 
-            item.setID(photo.getString("id"));
-            item.setCaption(photo.getString("title"));
+        private static class PhotosResult{
 
-            if (photo.has("url_s")) {
-                item.setUrl(photo.getString("url_s"));
 
-            }
+            @Expose
+            int page;
 
-            items.add(item);
+            @Expose
+            int pages;
+
+            @Expose
+            int perpage;
+
+            @Expose
+            int total;
+
+            @Expose
+            @SerializedName("photo")
+            GalleryItemEntity[] photo_array = new GalleryItemEntity[]{};
+
+
 
         }
     }
+
+
+
+    private void parseItems(List<GalleryItemEntity> items, String body) throws JSONException {
+
+
+
+
+
+
+
+
+
+        Log.d(TAG, "parseItems: PARSE ITEMS FOR JSON: " + body);
+
+
+
+        GsonBuilder builder = new GsonBuilder();
+
+
+
+        Gson gson = builder.serializeNulls().setPrettyPrinting().create();
+
+
+
+        PhotosObject photos = gson.fromJson(body, PhotosObject.class);
+        PhotosObject.PhotosResult result = photos.photos;
+
+        Log.d(TAG, "parseItems: result.pages " + result.pages);
+
+        items.addAll(Arrays.asList(result.photo_array));
+
+
+
+//        JSONObject photosObject = body.getJSONObject("photos");
+//
+//        JSONArray photoArray = photosObject.getJSONArray("photo");
+//
+//        for (int i = 0; i < photoArray.length(); i++) {
+//            JSONObject photo = (JSONObject) photoArray.get(i);
+//
+//            GalleryItemEntity item = new GalleryItemEntity();
+//
+//            item.setID(photo.getString("id"));
+//            item.setCaption(photo.getString("title"));
+//
+//            if (photo.has("url_s")) {
+//                item.setUrl(photo.getString("url_s"));
+//
+//            }
+//
+//            items.add(item);
+//
+//        }
+
+
+    }
+
+
+
 
 
 }
