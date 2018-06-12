@@ -2,6 +2,14 @@ package com.bignerdranch.android.flickrphotogallery.models;
 
 public interface GalleryItem {
 
+    String getHeight();
+
+    void setHeight(String height);
+
+    void setWidth(String width);
+
+    String getWidth();
+
     String getID();
 
     void setID(String ID);
