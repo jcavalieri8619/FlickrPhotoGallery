@@ -4,16 +4,12 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.os.HandlerThread;
-import android.os.Looper;
 import android.os.Message;
-import android.os.Process;
 import android.util.Log;
 
 import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import io.reactivex.Completable;
@@ -52,9 +48,7 @@ public class ThumbnailDownloader<T> extends HandlerThread {
     @Override
     protected void onLooperPrepared() {
 
-//        mRequestHandler = new MyHandler(getLooper());
-
-        mRequestHandler = new Handler(getLooper(),new Handler.Callback() {
+        mRequestHandler = new Handler(getLooper(), new Handler.Callback() {
             /**
              * when Looper dequeues a Message from its MessageQueue, it will hand that
              * message off to its target handler and this callback will be invoked;
@@ -69,6 +63,13 @@ public class ThumbnailDownloader<T> extends HandlerThread {
 
                     Log.d(TAG, "handleMessage: got request for URL: " + mRequestMap.get(target));
 
+
+                    // run each download task from thread in cached thread pool
+                    // so that not all downloads are taking place on same
+                    // thread associatd with this HandlerThread class;
+                    // since handleRequest has reference to UI Looper, no need
+                    // to call RX#observeOn(androidMainThread) because UI looper
+                    // ensures all UI mods done on UI thread
                     Completable.fromAction(() -> handleRequest(target))
                             .subscribeOn(Schedulers.from(Executors.newCachedThreadPool()))
                             .subscribe(new CompletableObserver() {
@@ -89,10 +90,9 @@ public class ThumbnailDownloader<T> extends HandlerThread {
 
                                 }
                             });
-//                    handleRequest(target);
 
                 }
-                
+
 
                 return true;
             }
@@ -122,12 +122,11 @@ public class ThumbnailDownloader<T> extends HandlerThread {
 
 
     private void handleRequest(final T target) {
-        try{
+        try {
             final String url = mRequestMap.get(target);
             if (url == null) {
                 return;
             }
-
 
 
             byte[] bitmapBytes = URLfetcher.getURLBytes(url);
@@ -141,7 +140,7 @@ public class ThumbnailDownloader<T> extends HandlerThread {
                 @Override
                 public void run() {
 
-                    if ( (mRequestMap.get(target) !=null &&  !mRequestMap.get(target).equals(url)) || mHasQuit) {
+                    if ((mRequestMap.get(target) != null && !mRequestMap.get(target).equals(url)) || mHasQuit) {
                         return;
                     }
 
@@ -165,36 +164,6 @@ public class ThumbnailDownloader<T> extends HandlerThread {
     public interface ThumbnailDownloadListener<T> {
         void onThumbnailDownloaded(T target, Bitmap thumbnail);
     }
-
-
-//    private class MyHandler extends Handler {
-//
-//        /**
-//         * Use the provided {@link Looper} instead of the default one.
-//         *
-//         * @param looper The looper, must not be null.
-//         */
-//        public MyHandler(final Looper looper) {
-//            super(looper);
-//        }
-//
-//        /**
-//         * Subclasses must implement this to receive messages.
-//         *
-//         * @param msg
-//         */
-//        @Override
-//        public void handleMessage(final Message msg) {
-//            if (msg.what == MESSAGE_DOWNLOAD) {
-//                T target = (T) msg.obj;
-//
-//                Log.d(TAG, "handleMessage: got request for URL: " + mRequestMap.get(target));
-//                handleRequest(target);
-//
-//            }
-//        }
-//    }
-
 
 
 }
