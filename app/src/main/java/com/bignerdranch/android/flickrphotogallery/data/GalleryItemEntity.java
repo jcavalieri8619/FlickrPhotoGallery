@@ -1,4 +1,6 @@
-package com.bignerdranch.android.flickrphotogallery;
+package com.bignerdranch.android.flickrphotogallery.data;
+
+import android.net.Uri;
 
 import com.bignerdranch.android.flickrphotogallery.models.GalleryItem;
 import com.google.gson.annotations.Expose;
@@ -26,6 +28,22 @@ public class GalleryItemEntity implements GalleryItem {
     @Expose
     @SerializedName("width_s")
     private String mWidth;
+
+    @Expose
+    @SerializedName("owner")
+    private String mOwner;
+
+
+
+    public Uri constructPhotoPageUri() {
+        final String FLICKR_URI = "https://www.flickr.com/photos/";
+
+        return Uri.parse(FLICKR_URI)
+                .buildUpon()
+                .appendPath(getOwner())
+                .appendPath(getID())
+                .build();
+    }
 
 
 
@@ -60,6 +78,16 @@ public class GalleryItemEntity implements GalleryItem {
     public void setID(final String ID) {
 
         mID = ID;
+    }
+
+    @Override
+    public String getOwner() {
+        return mOwner;
+    }
+
+    @Override
+    public void setOwner(final String owner) {
+        mOwner = owner;
     }
 
     @Override
