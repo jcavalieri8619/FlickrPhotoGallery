@@ -14,6 +14,10 @@ public interface GalleryItem {
 
     void setID(String ID);
 
+    String getOwner();
+
+    void setOwner(String owner);
+
     String getCaption();
 
     void setCaption(String caption);
